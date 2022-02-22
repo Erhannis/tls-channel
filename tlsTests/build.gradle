@@ -14,16 +14,27 @@ compileJava {
 }
 
 dependencies {
-    implementation 'org.slf4j:slf4j-api:1.7.32'
+    implementation project(':java')
     implementation 'net.sourceforge.streamsupport:streamsupport_all:1.7.4'
 
-    testImplementation project(':tlsTests')
+    testImplementation 'org.scala-lang:scala-library:2.13.7'
+    testImplementation 'org.scalatest:scalatest_2.13:3.2.9'
+    testImplementation 'ch.qos.logback:logback-classic:1.2.9'
+    testImplementation 'com.typesafe.scala-logging:scala-logging_2.13:3.9.4'
+    testImplementation 'io.netty:netty-buffer:4.1.72.Final'
+    testImplementation 'io.netty:netty-handler:4.1.72.Final'
+    testRuntimeOnly 'io.netty:netty-tcnative-boringssl-static:2.0.46.Final'
+    // https://github.com/scalatest/scalatest/issues/1736
+    testRuntimeOnly "com.vladsch.flexmark:flexmark-all:0.36.8"
 }
 
 
 spotless {
     java {
         googleJavaFormat()
+    }
+    scala {
+        scalafmt().configFile('.scalafmt.conf')
     }
 }
 
@@ -44,6 +55,37 @@ spotbugsMain {
     }
 }
 
+spotbugsTest {
+    excludeFilter = file('spotbugs-exclude-tests.xml')
+    reports {
+        html {
+            required = true
+            outputLocation = file("$buildDir/reports/spotbugs/spotbugsTest.html")
+        }
+    }
+}
+
+compileScala {
+    options.compilerArgs = [
+            "-language:implicitConversions",
+            "-Xlint",
+            "-deprecation",
+            "-Xfatal-warnings"
+    ]
+}
+
+task scalaTest(dependsOn: ['testClasses'], type: JavaExec) {
+    // override security properties enabling all options
+    systemProperty "java.security.properties", "java.security.override"
+    mainClass = 'org.scalatest.tools.Runner'
+    args = ['-R', 'build/classes/scala/test', '-o', '-h', file("$buildDir/reports/test")]
+    classpath = sourceSets.test.runtimeClasspath
+}
+
+test.enabled = false
+check.dependsOn scalaTest
+
+
 javadoc {
     exclude "tlschannel/impl"
     exclude "tlschannel/util"
@@ -52,6 +94,17 @@ javadoc {
 java {
     withSourcesJar()
     withJavadocJar()
+}
+
+// see tlschannel.AllocationTest for comment about this
+task allocationTest(type: JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'tlschannel.AllocationTest'
+    jvmArgs = ['-XX:+UnlockExperimentalVMOptions', '-XX:+UseEpsilonGC']
+}
+
+if (JavaVersion.current().ordinal() >= JavaVersion.VERSION_11.ordinal()) {
+    check.dependsOn allocationTest
 }
 
 publishing {
